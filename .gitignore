@@ -1,0 +1,20 @@
+# Build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Common Go outputs
+/bin/
+/dist/
+/coverage.out
+
+# Local scratch space
+/.tmp-smoke/
+
+# OS noise
+.DS_Store
+Thumbs.db

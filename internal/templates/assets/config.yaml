@@ -1,0 +1,31 @@
+version: 1
+separator: "\n\n"
+copy_by_default: true
+token_warning_threshold: 24000
+
+base:
+  always_include:
+    - global.md
+
+presets:
+  feature:
+    description: "New feature implementation"
+    blocks:
+      - intro/senior-dev.md
+      - communication/concise.md
+      - tools/dev-tools.md
+      - tasks/feature.md
+
+  review:
+    description: "Code review"
+    blocks:
+      - intro/senior-dev.md
+      - communication/detailed.md
+      - tasks/review.md
+
+  bugfix:
+    description: "Bug fixing"
+    blocks:
+      - intro/senior-dev.md
+      - communication/concise.md
+      - tasks/bugfix.md
