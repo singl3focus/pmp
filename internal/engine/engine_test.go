@@ -52,6 +52,39 @@ func TestBuildPlacesMessageFirst(t *testing.T) {
 	}
 }
 
+func TestBuildSkipsTemplateRenderingForPlainBlocks(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	projectRoot := filepath.Join(root, ".pmp")
+	if err := os.MkdirAll(filepath.Join(projectRoot, "blocks", "tasks"), 0o755); err != nil {
+		t.Fatalf("mkdir tasks: %v", err)
+	}
+
+	// Block contains {{ }} that would break text/template, but has no "{{ ."
+	// so it should be treated as plain text.
+	content := "Use {{ range $i }}{{ $i }}{{ end }} in your Helm chart."
+	if err := os.WriteFile(filepath.Join(projectRoot, "blocks", "tasks", "helm.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write block: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "config.yaml"), []byte("presets:\n  helm:\n    blocks:\n      - tasks/helm.md\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	active, err := config.LoadActive(root)
+	if err != nil {
+		t.Fatalf("load active: %v", err)
+	}
+
+	result, err := Build(BuildRequest{PresetName: "helm"}, active)
+	if err != nil {
+		t.Fatalf("build should not fail on plain block with curly braces: %v", err)
+	}
+	if !strings.Contains(result.Prompt, "{{ range $i }}") {
+		t.Fatalf("expected literal template syntax preserved, got %q", result.Prompt)
+	}
+}
+
 func TestBuildWarnsOnTokenLimit(t *testing.T) {
 	t.Parallel()
 

@@ -92,12 +92,16 @@ func Build(req BuildRequest, active config.Active) (BuildResult, error) {
 	}
 
 	for _, item := range ordered {
-		rendered, err := render(item.Content, data, item.Path)
-		if err != nil {
-			return BuildResult{}, err
+		text := item.Content
+		if item.NeedsRender() {
+			var err error
+			text, err = render(text, data, item.Path)
+			if err != nil {
+				return BuildResult{}, err
+			}
 		}
-		if rendered = strings.TrimSpace(rendered); rendered != "" {
-			parts = append(parts, rendered)
+		if text = strings.TrimSpace(text); text != "" {
+			parts = append(parts, text)
 		}
 	}
 

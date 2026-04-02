@@ -21,8 +21,21 @@ type Block struct {
 	Tags        []string
 	Weight      int
 	Hidden      bool
+	Template    *bool
 	Content     string
 	Source      string
+}
+
+// NeedsRender reports whether the block should be processed through
+// text/template. When front matter sets template: true/false explicitly,
+// that value wins. Otherwise the block is rendered only when its content
+// contains the "{{ ." pattern, avoiding accidental breakage of blocks
+// that mention Go/Helm/Actions template syntax as literal text.
+func (b Block) NeedsRender() bool {
+	if b.Template != nil {
+		return *b.Template
+	}
+	return strings.Contains(b.Content, "{{ .")
 }
 
 type Root struct {
@@ -36,6 +49,7 @@ type frontMatter struct {
 	Tags        []string `yaml:"tags"`
 	Weight      int      `yaml:"weight"`
 	Hidden      bool     `yaml:"hidden"`
+	Template    *bool    `yaml:"template"`
 }
 
 func Resolve(relPath string, roots []Root) (Block, error) {
@@ -134,6 +148,7 @@ func LoadFile(absPath, relPath, source string) (Block, error) {
 		Tags:        append([]string(nil), meta.Tags...),
 		Weight:      meta.Weight,
 		Hidden:      meta.Hidden,
+		Template:    meta.Template,
 		Content:     strings.TrimSpace(content),
 		Source:      source,
 	}, nil

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -138,6 +139,29 @@ func TestEmitReturnsCombinedErrorWhenClipboardAndStdoutFail(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "stdout fallback also failed") {
 		t.Fatalf("expected combined fallback error, got %v", err)
+	}
+}
+
+func TestEncodeForClipboardPreservesContent(t *testing.T) {
+	t.Parallel()
+
+	input := []byte("Привет мир")
+	encoded := encodeForClipboard(input)
+	if len(encoded) == 0 {
+		t.Fatal("expected non-empty encoded output")
+	}
+
+	// On all platforms the output must contain recognisable data.
+	// On Windows it will be UTF-16LE with BOM; on others it is a passthrough.
+	if runtime.GOOS == "windows" {
+		// First two bytes must be UTF-16LE BOM.
+		if encoded[0] != 0xFF || encoded[1] != 0xFE {
+			t.Fatalf("expected UTF-16LE BOM, got %x %x", encoded[0], encoded[1])
+		}
+	} else {
+		if string(encoded) != string(input) {
+			t.Fatalf("expected passthrough on non-windows, got %q", encoded)
+		}
 	}
 }
 

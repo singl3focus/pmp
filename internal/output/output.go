@@ -85,7 +85,9 @@ func writeClipboard(data []byte) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start clipboard command: %w", err)
 	}
-	if _, err := stdin.Write(data); err != nil {
+
+	payload := encodeForClipboard(data)
+	if _, err := stdin.Write(payload); err != nil {
 		_ = stdin.Close()
 		return fmt.Errorf("write clipboard content: %w", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -212,6 +213,61 @@ func TestLoadActiveUsesProjectConfigWhenGlobalHomeLookupFails(t *testing.T) {
 	}
 	if active.GlobalRoot != "" {
 		t.Fatalf("expected empty global root, got %q", active.GlobalRoot)
+	}
+}
+
+func TestDiscoverProjectRootStopsAtGitBoundary(t *testing.T) {
+	home := t.TempDir()
+	setHomeDir(t, home)
+
+	// Create .pmp config above a .git boundary — it should NOT be found.
+	parentRoot := filepath.Join(home, "workspace")
+	if err := os.MkdirAll(filepath.Join(parentRoot, ".pmp"), 0o755); err != nil {
+		t.Fatalf("mkdir parent pmp: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(parentRoot, ".pmp", "config.yaml"), []byte("presets: {}\n"), 0o644); err != nil {
+		t.Fatalf("write parent config: %v", err)
+	}
+
+	// Create a git repo inside workspace with no .pmp of its own.
+	repoDir := filepath.Join(parentRoot, "myrepo")
+	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir git: %v", err)
+	}
+	nested := filepath.Join(repoDir, "pkg", "feature")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatalf("mkdir nested: %v", err)
+	}
+
+	active, err := LoadActive(nested)
+	if err == nil {
+		t.Fatalf("expected config-not-found error, but got active config at %q", active.ActiveConfigPath)
+	}
+	if !errors.Is(err, ErrConfigNotFound) {
+		t.Fatalf("expected ErrConfigNotFound, got: %v", err)
+	}
+}
+
+func TestLoadActiveRejectsUnknownConfigKeys(t *testing.T) {
+	root := t.TempDir()
+	setHomeDir(t, t.TempDir())
+
+	projectRoot := filepath.Join(root, ".pmp")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("mkdir project: %v", err)
+	}
+
+	configData := "copy_by_defaalt: true\npresets: {}\n"
+	if err := os.WriteFile(filepath.Join(projectRoot, "config.yaml"), []byte(configData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadActive(root)
+	if err == nil {
+		t.Fatal("expected error for unknown config key 'copy_by_defaalt'")
+	}
+	if !strings.Contains(err.Error(), "copy_by_defaalt") {
+		t.Fatalf("error should mention the unknown key, got: %v", err)
 	}
 }
 

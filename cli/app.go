@@ -28,6 +28,8 @@ func Execute(args []string, build VersionInfo) error {
 		return runUI(args[1:])
 	case "-h", "--help", "help":
 		return printRootHelp()
+	case "-v", "--version":
+		return runVersion(build, nil)
 	default:
 		return runBuild(args)
 	}

@@ -174,6 +174,14 @@ func discoverProjectRoot(start string) (string, error) {
 			return "", err
 		}
 
+		// Stop at repository root to avoid picking up an unrelated .pmp
+		// config from a parent directory outside this project.
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return "", nil
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			return "", nil
@@ -183,13 +191,16 @@ func discoverProjectRoot(start string) (string, error) {
 }
 
 func loadFile(path string) (fileConfig, error) {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return fileConfig{}, fmt.Errorf("read config %s: %w", path, err)
 	}
+	defer file.Close()
 
 	var cfg fileConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	dec := yaml.NewDecoder(file)
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil {
 		return fileConfig{}, fmt.Errorf("parse config %s: %w", path, err)
 	}
 	return cfg, nil

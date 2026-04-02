@@ -72,6 +72,21 @@ func TestExecuteWithoutArgsPrintsRootHelp(t *testing.T) {
 	}
 }
 
+func TestExecuteVersionFlag(t *testing.T) {
+	build := VersionInfo{Version: "1.2.3", Commit: "abc", Date: "2026-04-02"}
+	for _, flag := range []string{"-v", "--version"} {
+		stdout, err := captureStdout(t, func() error {
+			return Execute([]string{flag}, build)
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", flag, err)
+		}
+		if !strings.Contains(stdout, "1.2.3") {
+			t.Fatalf("%s: expected version in output, got %q", flag, stdout)
+		}
+	}
+}
+
 func TestExecuteBuildUsesStdoutWhenCopyDisabledByConfig(t *testing.T) {
 	tmp := t.TempDir()
 	previousWD, err := os.Getwd()

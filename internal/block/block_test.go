@@ -86,6 +86,36 @@ func TestResolveRejectsPathsOutsideRoot(t *testing.T) {
 	}
 }
 
+func TestNeedsRenderUsesExplicitFrontMatter(t *testing.T) {
+	t.Parallel()
+
+	trueVal := true
+	falseVal := false
+
+	tests := []struct {
+		name     string
+		template *bool
+		content  string
+		want     bool
+	}{
+		{"explicit true", &trueVal, "plain text", true},
+		{"explicit false", &falseVal, "{{ .Vars.name }}", false},
+		{"nil with template syntax", nil, "Hello {{ .Date }}", true},
+		{"nil without template syntax", nil, "Hello {{ range $i }}{{ end }}", false},
+		{"nil plain text", nil, "Just plain text", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			b := Block{Template: tt.template, Content: tt.content}
+			if got := b.NeedsRender(); got != tt.want {
+				t.Fatalf("NeedsRender() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadFileStripsUTF8BOMBeforeParsingFrontMatter(t *testing.T) {
 	t.Parallel()
 
