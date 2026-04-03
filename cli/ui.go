@@ -1,20 +1,28 @@
 package cli
 
 import (
-	"flag"
 	"os"
+
+	"github.com/spf13/cobra"
 
 	"github.com/singl3focus/pmp/internal/config"
 	"github.com/singl3focus/pmp/internal/interactive"
 )
 
-func runUI(args []string) error {
-	fs := flag.NewFlagSet("ui", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
-		return err
+func newUICommand() *cobra.Command {
+	return &cobra.Command{
+		Use:           "ui",
+		Short:         "Launch the interactive builder",
+		Args:          cobra.NoArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUI()
+		},
 	}
+}
 
+func runUI() error {
 	active, err := config.LoadActive(".")
 	if err != nil {
 		return err

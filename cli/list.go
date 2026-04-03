@@ -1,22 +1,29 @@
 package cli
 
 import (
-	"flag"
 	"fmt"
-	"os"
 	"sort"
+
+	"github.com/spf13/cobra"
 
 	"github.com/singl3focus/pmp/internal/block"
 	"github.com/singl3focus/pmp/internal/config"
 )
 
-func runList(args []string) error {
-	fs := flag.NewFlagSet("list", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
-		return err
+func newListCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:           "list",
+		Short:         "Show presets and available blocks",
+		Args:          cobra.NoArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runList()
+		},
 	}
+}
 
+func runList() error {
 	active, err := config.LoadActive(".")
 	if err != nil {
 		return err

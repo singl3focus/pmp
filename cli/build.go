@@ -1,10 +1,12 @@
 package cli
 
 import (
-	"flag"
 	"fmt"
-	"os"
+	"sort"
 	"strings"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/singl3focus/pmp/internal/config"
 	"github.com/singl3focus/pmp/internal/engine"
@@ -23,15 +25,26 @@ type buildFlags struct {
 	json       bool
 }
 
-func runBuild(args []string) error {
-	fs := flag.NewFlagSet("build", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-
+func newBuildCommand() *cobra.Command {
 	flags := buildFlags{}
-	fs.StringVar(&flags.preset, "preset", "", "preset name")
-	fs.StringVar(&flags.preset, "p", "", "preset name")
-	fs.StringVar(&flags.message, "message", "", "task message")
-	fs.StringVar(&flags.message, "m", "", "task message")
+
+	cmd := &cobra.Command{
+		Use:           "build",
+		Short:         "Assemble a prompt explicitly",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runBuild(flags)
+		},
+	}
+
+	bindBuildFlags(cmd.Flags(), &flags)
+	return cmd
+}
+
+func bindBuildFlags(fs *pflag.FlagSet, flags *buildFlags) {
+	fs.StringVarP(&flags.preset, "preset", "p", "", "preset name")
+	fs.StringVarP(&flags.message, "message", "m", "", "task message")
 	fs.Var(&flags.blocks, "block", "comma separated extra block paths")
 	fs.Var(&flags.vars, "var", "template variable key=value")
 	fs.IntVar(&flags.tokenLimit, "token-limit", 0, "warn when estimated tokens exceed this limit")
@@ -39,11 +52,9 @@ func runBuild(args []string) error {
 	fs.BoolVar(&flags.noCopy, "no-copy", false, "print prompt to stdout instead of copying")
 	fs.StringVar(&flags.out, "out", "", "write prompt or json result to file")
 	fs.BoolVar(&flags.json, "json", false, "emit json result")
+}
 
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
+func runBuild(flags buildFlags) error {
 	if flags.preset == "" {
 		return fmt.Errorf("missing required flag --preset")
 	}
@@ -94,6 +105,18 @@ func runBuild(args []string) error {
 	return printBuildSummary(result, mode)
 }
 
+func (f buildFlags) hasAnyFlags() bool {
+	return f.preset != "" ||
+		f.message != "" ||
+		len(f.blocks.values) > 0 ||
+		len(f.vars.values) > 0 ||
+		f.tokenLimit != 0 ||
+		f.dryRun ||
+		f.noCopy ||
+		f.out != "" ||
+		f.json
+}
+
 func printDryRun(result engine.BuildResult) error {
 	fmt.Println("Build plan")
 	fmt.Printf("Preset: %s\n", result.PresetName)
@@ -130,6 +153,10 @@ func (f *csvFlag) String() string {
 	return strings.Join(f.values, ",")
 }
 
+func (f *csvFlag) Type() string {
+	return "csv"
+}
+
 func (f *csvFlag) Set(value string) error {
 	for _, part := range strings.Split(value, ",") {
 		part = strings.TrimSpace(part)
@@ -158,7 +185,12 @@ func (f *kvFlag) String() string {
 	for key, value := range f.values {
 		parts = append(parts, key+"="+value)
 	}
+	sort.Strings(parts)
 	return strings.Join(parts, ",")
+}
+
+func (f *kvFlag) Type() string {
+	return "key=value"
 }
 
 func (f *kvFlag) Set(value string) error {

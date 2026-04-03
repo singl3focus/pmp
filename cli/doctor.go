@@ -1,23 +1,30 @@
 package cli
 
 import (
-	"flag"
 	"fmt"
-	"os"
 	"sort"
+
+	"github.com/spf13/cobra"
 
 	"github.com/singl3focus/pmp/internal/block"
 	"github.com/singl3focus/pmp/internal/config"
 	"github.com/singl3focus/pmp/internal/output"
 )
 
-func runDoctor(args []string) error {
-	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
-		return err
+func newDoctorCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:           "doctor",
+		Short:         "Validate configuration and block resolution",
+		Args:          cobra.NoArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDoctor()
+		},
 	}
+}
 
+func runDoctor() error {
 	active, err := config.LoadActive(".")
 	if err != nil {
 		return err

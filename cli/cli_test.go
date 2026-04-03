@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"path/filepath"
@@ -84,6 +85,50 @@ func TestExecuteVersionFlag(t *testing.T) {
 		if !strings.Contains(stdout, "1.2.3") {
 			t.Fatalf("%s: expected version in output, got %q", flag, stdout)
 		}
+	}
+}
+
+func TestExecuteUnknownFirstArgFallsBackToBuildFlow(t *testing.T) {
+	err := Execute([]string{"feature"}, VersionInfo{})
+	if err == nil {
+		t.Fatal("expected build validation error")
+	}
+	if !strings.Contains(err.Error(), "missing required flag --preset") {
+		t.Fatalf("expected build-style validation error, got %v", err)
+	}
+}
+
+func TestExecuteCompletionCommandRemainsReachable(t *testing.T) {
+	root := newRootCommand(VersionInfo{})
+	root.SetArgs(normalizeArgs([]string{"completion", "powershell"}))
+
+	var stdout bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(io.Discard)
+
+	err := root.Execute()
+	if err != nil {
+		t.Fatalf("completion: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Register-ArgumentCompleter") {
+		t.Fatalf("expected PowerShell completion script, got %q", stdout.String())
+	}
+}
+
+func TestNormalizeArgsPreservesCobraCompletionCommands(t *testing.T) {
+	t.Parallel()
+
+	tests := []string{"completion", "__complete", "__completeNoDesc"}
+	for _, firstArg := range tests {
+		firstArg := firstArg
+		t.Run(firstArg, func(t *testing.T) {
+			t.Parallel()
+
+			args := normalizeArgs([]string{firstArg, "build"})
+			if args[0] != firstArg {
+				t.Fatalf("expected %q to stay unchanged, got %q", firstArg, args[0])
+			}
+		})
 	}
 }
 

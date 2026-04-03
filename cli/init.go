@@ -1,23 +1,34 @@
 package cli
 
 import (
-	"flag"
 	"os"
 	"path/filepath"
+
+	"github.com/spf13/cobra"
 
 	"github.com/singl3focus/pmp/internal/templates"
 )
 
-func runInit(args []string) error {
-	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+func newInitCommand() *cobra.Command {
+	var global bool
 
-	global := fs.Bool("global", false, "write to ~/.pmp instead of ./.pmp")
-	if err := fs.Parse(args); err != nil {
-		return err
+	cmd := &cobra.Command{
+		Use:           "init",
+		Short:         "Scaffold .pmp config and starter blocks",
+		Args:          cobra.NoArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runInit(global)
+		},
 	}
 
-	targetRoot, err := resolveInitRoot(*global)
+	cmd.Flags().BoolVar(&global, "global", false, "write to ~/.pmp instead of ./.pmp")
+	return cmd
+}
+
+func runInit(global bool) error {
+	targetRoot, err := resolveInitRoot(global)
 	if err != nil {
 		return err
 	}
