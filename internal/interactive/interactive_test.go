@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/singl3focus/pmp/internal/config"
+	"github.com/singl3focus/pmp/internal/output"
 )
 
 func TestFilterBlocksMatchesPathDescriptionAndTags(t *testing.T) {
@@ -80,6 +81,75 @@ func TestUpdateOutputDoesNotFinishWhenBuildHasError(t *testing.T) {
 	}
 	if next.statusMessage == "" {
 		t.Fatal("expected status message explaining why output cannot be confirmed")
+	}
+}
+
+func TestOutputOptionsFollowSelectedMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		outputIndex int
+		filePath    string
+		want        output.Options
+	}{
+		{
+			name:        "clipboard ignores default file path",
+			outputIndex: 0,
+			filePath:    "prompt.md",
+			want:        output.Options{},
+		},
+		{
+			name:        "stdout enables no copy only",
+			outputIndex: 1,
+			filePath:    "prompt.md",
+			want:        output.Options{NoCopy: true},
+		},
+		{
+			name:        "file uses trimmed file path",
+			outputIndex: 2,
+			filePath:    "  prompt.md  ",
+			want:        output.Options{OutFile: "prompt.md"},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := outputOptions(tt.outputIndex, tt.filePath)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("unexpected output options: got %#v want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewModelStartsWithEmptyFilePath(t *testing.T) {
+	t.Parallel()
+
+	m, err := newModel(mustLoadActiveForInteractiveTest(t, "version: 1\n"))
+	if err != nil {
+		t.Fatalf("newModel: %v", err)
+	}
+	if m.filePath != "" {
+		t.Fatalf("expected empty default file path, got %q", m.filePath)
+	}
+}
+
+func TestUpdateOutputSeedsDefaultFilePathWhenEnteringFileMode(t *testing.T) {
+	t.Parallel()
+
+	m := model{outputIndex: 1}
+	updated, _ := m.updateOutput(tea.KeyMsg{Type: tea.KeyDown})
+	next := updated.(model)
+
+	if next.outputIndex != 2 {
+		t.Fatalf("expected file output to be selected, got %d", next.outputIndex)
+	}
+	if next.filePath != defaultFilePath() {
+		t.Fatalf("expected default file path %q, got %q", defaultFilePath(), next.filePath)
 	}
 }
 

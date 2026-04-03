@@ -87,18 +87,7 @@ func Run(active config.Active, in io.Reader, out io.Writer) error {
 		return nil
 	}
 
-	emitMode := output.ModeClipboard
-	switch finishedModel.outputIndex {
-	case 1:
-		emitMode = output.ModeStdout
-	case 2:
-		emitMode = output.ModeFile
-	}
-
-	emittedMode, err := output.Emit(finishedModel.result, output.Options{
-		NoCopy:  emitMode == output.ModeStdout,
-		OutFile: strings.TrimSpace(finishedModel.filePath),
-	})
+	emittedMode, err := output.Emit(finishedModel.result, outputOptions(finishedModel.outputIndex, finishedModel.filePath))
 	if err != nil {
 		return err
 	}
@@ -139,7 +128,6 @@ func newModel(active config.Active) (model, error) {
 		presetNames: append([]string{""}, presetNames...),
 		blocks:      entries,
 		selected:    map[string]bool{},
-		filePath:    defaultFilePath(),
 		width:       120,
 		height:      32,
 	}
@@ -323,11 +311,11 @@ func (m model) updateOutput(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "up", "k":
 		if m.outputIndex > 0 {
-			m.outputIndex--
+			m.setOutputIndex(m.outputIndex - 1)
 		}
 	case "down", "j":
 		if m.outputIndex < 2 {
-			m.outputIndex++
+			m.setOutputIndex(m.outputIndex + 1)
 		}
 	case "backspace":
 		if m.outputIndex == 2 && m.filePath != "" {
@@ -741,6 +729,25 @@ func maxInt(a, b int) int {
 
 func defaultFilePath() string {
 	return filepath.Clean("prompt.md")
+}
+
+func outputOptions(outputIndex int, filePath string) output.Options {
+	switch outputIndex {
+	case 1:
+		return output.Options{NoCopy: true}
+	case 2:
+		return output.Options{OutFile: strings.TrimSpace(filePath)}
+	default:
+		return output.Options{}
+	}
+}
+
+func (m *model) setOutputIndex(next int) {
+	previous := m.outputIndex
+	m.outputIndex = next
+	if previous != 2 && next == 2 && strings.TrimSpace(m.filePath) == "" {
+		m.filePath = defaultFilePath()
+	}
 }
 
 func (m *model) saveCurrentPreset() (tea.Model, tea.Cmd) {

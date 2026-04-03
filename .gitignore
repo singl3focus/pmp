@@ -14,6 +14,7 @@
 
 # Local scratch space
 /.tmp-smoke/
+.pmp/
 
 # OS noise
 .DS_Store
@@ -23,3 +24,4 @@ Thumbs.db
 .claude/
 AGENTS.md
 CLAUDE.md
+TODO
