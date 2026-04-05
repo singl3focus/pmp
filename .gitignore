@@ -6,6 +6,11 @@
 *.dylib
 *.test
 *.out
+.cache/
+.gocache/
+
+# Test artifacts
+reports/
 
 # Common Go outputs
 /bin/

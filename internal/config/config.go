@@ -7,8 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/singl3focus/pmp/internal/block"
 	"gopkg.in/yaml.v3"
+
+	"github.com/singl3focus/pmp/internal/block"
 )
 
 var ErrConfigNotFound = errors.New("no pmp config found; run `pmp init` or `pmp init --global`")
@@ -198,18 +199,21 @@ func discoverProjectRoot(start string) (string, error) {
 	}
 }
 
-func loadFile(path string) (fileConfig, error) {
+func loadFile(path string) (cfg fileConfig, err error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return fileConfig{}, fmt.Errorf("read config %s: %w", path, err)
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("close config %s: %w", path, closeErr)
+		}
+	}()
 
-	var cfg fileConfig
 	dec := yaml.NewDecoder(file)
 	dec.KnownFields(true)
-	if err := dec.Decode(&cfg); err != nil {
-		return fileConfig{}, fmt.Errorf("parse config %s: %w", path, err)
+	if decodeErr := dec.Decode(&cfg); decodeErr != nil {
+		return fileConfig{}, fmt.Errorf("parse config %s: %w", path, decodeErr)
 	}
 	if cfg.MessagePosition != "" &&
 		cfg.MessagePosition != MessagePositionTop &&

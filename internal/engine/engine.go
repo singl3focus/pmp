@@ -8,9 +8,10 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/tiktoken-go/tokenizer"
+
 	"github.com/singl3focus/pmp/internal/block"
 	"github.com/singl3focus/pmp/internal/config"
-	"github.com/tiktoken-go/tokenizer"
 )
 
 type BuildRequest struct {
