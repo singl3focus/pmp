@@ -27,6 +27,7 @@ type Config struct {
 	Separator             string
 	CopyByDefault         bool
 	TokenWarningThreshold int
+	MessagePosition       string
 	Base                  BaseConfig
 	Presets               map[string]Preset
 }
@@ -46,6 +47,7 @@ type fileConfig struct {
 	Separator             string            `yaml:"separator,omitempty"`
 	CopyByDefault         *bool             `yaml:"copy_by_default,omitempty"`
 	TokenWarningThreshold int               `yaml:"token_warning_threshold,omitempty"`
+	MessagePosition       string            `yaml:"message_position,omitempty"`
 	Base                  *baseFileConfig   `yaml:"base,omitempty"`
 	Presets               map[string]Preset `yaml:"presets,omitempty"`
 }
@@ -54,12 +56,18 @@ type baseFileConfig struct {
 	AlwaysInclude *[]string `yaml:"always_include,omitempty"`
 }
 
+const (
+	MessagePositionTop    = "top"
+	MessagePositionBottom = "bottom"
+)
+
 func Default() Config {
 	return Config{
 		Version:               1,
 		Separator:             "\n\n",
 		CopyByDefault:         true,
 		TokenWarningThreshold: 24000,
+		MessagePosition:       MessagePositionBottom,
 		Base:                  BaseConfig{},
 		Presets:               map[string]Preset{},
 	}
@@ -203,6 +211,12 @@ func loadFile(path string) (fileConfig, error) {
 	if err := dec.Decode(&cfg); err != nil {
 		return fileConfig{}, fmt.Errorf("parse config %s: %w", path, err)
 	}
+	if cfg.MessagePosition != "" &&
+		cfg.MessagePosition != MessagePositionTop &&
+		cfg.MessagePosition != MessagePositionBottom {
+		return fileConfig{}, fmt.Errorf("parse config %s: invalid message_position %q, must be %q or %q",
+			path, cfg.MessagePosition, MessagePositionTop, MessagePositionBottom)
+	}
 	return cfg, nil
 }
 
@@ -249,6 +263,9 @@ func merge(base Config, override fileConfig) Config {
 	}
 	if override.TokenWarningThreshold != 0 {
 		result.TokenWarningThreshold = override.TokenWarningThreshold
+	}
+	if override.MessagePosition != "" {
+		result.MessagePosition = override.MessagePosition
 	}
 	if override.Base != nil && override.Base.AlwaysInclude != nil {
 		result.Base.AlwaysInclude = append([]string(nil), (*override.Base.AlwaysInclude)...)

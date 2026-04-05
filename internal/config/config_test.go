@@ -271,6 +271,29 @@ func TestLoadActiveRejectsUnknownConfigKeys(t *testing.T) {
 	}
 }
 
+func TestLoadActiveRejectsInvalidMessagePosition(t *testing.T) {
+	root := t.TempDir()
+	setHomeDir(t, t.TempDir())
+
+	projectRoot := filepath.Join(root, ".pmp")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("mkdir project: %v", err)
+	}
+
+	configData := "message_position: middle\npresets: {}\n"
+	if err := os.WriteFile(filepath.Join(projectRoot, "config.yaml"), []byte(configData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadActive(root)
+	if err == nil {
+		t.Fatal("expected error for invalid message_position 'middle'")
+	}
+	if !strings.Contains(err.Error(), "middle") {
+		t.Fatalf("error should mention the invalid value, got: %v", err)
+	}
+}
+
 func setHomeDir(t *testing.T, home string) {
 	t.Helper()
 	t.Setenv("HOME", home)

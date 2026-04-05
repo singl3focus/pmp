@@ -2,6 +2,7 @@ version: 1
 separator: "\n\n"
 copy_by_default: true
 token_warning_threshold: 24000
+message_position: bottom
 
 base:
   always_include:

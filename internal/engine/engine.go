@@ -10,6 +10,7 @@ import (
 
 	"github.com/singl3focus/pmp/internal/block"
 	"github.com/singl3focus/pmp/internal/config"
+	"github.com/tiktoken-go/tokenizer"
 )
 
 type BuildRequest struct {
@@ -86,8 +87,10 @@ func Build(req BuildRequest, active config.Active) (BuildResult, error) {
 		Preset: req.PresetName,
 	}
 
+	msg := strings.TrimSpace(req.Message)
+
 	var parts []string
-	if msg := strings.TrimSpace(req.Message); msg != "" {
+	if msg != "" && active.Config.MessagePosition == config.MessagePositionTop {
 		parts = append(parts, msg)
 	}
 
@@ -105,13 +108,17 @@ func Build(req BuildRequest, active config.Active) (BuildResult, error) {
 		}
 	}
 
+	if msg != "" && active.Config.MessagePosition != config.MessagePositionTop {
+		parts = append(parts, msg)
+	}
+
 	prompt := strings.Join(parts, active.Config.Separator)
 	result := BuildResult{
 		PresetName:      req.PresetName,
 		Message:         strings.TrimSpace(req.Message),
 		Prompt:          prompt,
 		BlocksUsed:      used,
-		EstimatedTokens: estimateTokens(prompt),
+		EstimatedTokens: countTokens(prompt),
 	}
 
 	threshold := active.Config.TokenWarningThreshold
@@ -149,15 +156,23 @@ func mergeVars(base, override map[string]string) map[string]string {
 	return result
 }
 
-func estimateTokens(text string) int {
-	fields := strings.Fields(text)
-	if len(fields) == 0 {
+var codec, _ = tokenizer.Get(tokenizer.Cl100kBase)
+
+func countTokens(text string) int {
+	if text == "" {
 		return 0
 	}
+	if codec != nil {
+		if n, err := codec.Count(text); err == nil {
+			return n
+		}
+	}
+	// Fallback: heuristic estimation when codec is unavailable.
 	charCount := len([]rune(text))
+	wordCount := len(strings.Fields(text))
 	estimate := charCount / 4
-	if estimate < len(fields) {
-		return len(fields)
+	if estimate < wordCount {
+		return wordCount
 	}
 	return estimate
 }
