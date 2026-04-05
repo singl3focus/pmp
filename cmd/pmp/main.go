@@ -16,11 +16,7 @@ var (
 func main() {
 	initConsole()
 
-	if err := cli.Execute(os.Args[1:], cli.VersionInfo{
-		Version: version,
-		Commit:  commit,
-		Date:    date,
-	}); err != nil {
+	if err := cli.Execute(os.Args[1:], resolveVersionInfo(version, commit, date)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
