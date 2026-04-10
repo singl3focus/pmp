@@ -54,6 +54,7 @@ func newRootCommand(build VersionInfo) *cobra.Command {
 		newBuildCommand(),
 		newInitCommand(),
 		newListCommand(),
+		newPresetCommand(),
 		newDoctorCommand(),
 		newVersionCommand(build),
 		newUICommand(),
@@ -78,7 +79,7 @@ func shouldUseImplicitBuild(arg string) bool {
 	}
 
 	switch arg {
-	case "build", "init", "list", "doctor", "version", "ui", "help", "completion", "__complete", "__completeNoDesc":
+	case "build", "init", "list", "preset", "doctor", "version", "ui", "help", "completion", "__complete", "__completeNoDesc":
 		return false
 	default:
 		return true

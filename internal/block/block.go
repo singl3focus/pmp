@@ -123,6 +123,37 @@ func SortedPaths(blocks map[string]Block) []string {
 	return paths
 }
 
+func SortedBlocks(blocks map[string]Block, includeHidden bool) []Block {
+	ordered := make([]Block, 0, len(blocks))
+	for _, item := range blocks {
+		if item.Hidden && !includeHidden {
+			continue
+		}
+		ordered = append(ordered, item)
+	}
+
+	sort.Slice(ordered, func(i, j int) bool {
+		left := ordered[i]
+		right := ordered[j]
+
+		if left.Hidden != right.Hidden {
+			return !left.Hidden
+		}
+		if left.Weight != right.Weight {
+			return left.Weight < right.Weight
+		}
+
+		leftLabel := strings.ToLower(displayLabel(left))
+		rightLabel := strings.ToLower(displayLabel(right))
+		if leftLabel != rightLabel {
+			return leftLabel < rightLabel
+		}
+		return left.Path < right.Path
+	})
+
+	return ordered
+}
+
 func LoadFile(absPath, relPath, source string) (Block, error) {
 	data, err := os.ReadFile(absPath)
 	if err != nil {
@@ -216,4 +247,11 @@ func resolveWithinRoot(rootDir, relPath string) (string, error) {
 		return "", fmt.Errorf("block %q escapes the block root", relPath)
 	}
 	return absPath, nil
+}
+
+func displayLabel(item Block) string {
+	if item.Title != "" {
+		return item.Title
+	}
+	return item.Path
 }

@@ -122,6 +122,20 @@ func (a Active) WritableConfigPath() string {
 	return a.ActiveConfigPath
 }
 
+func LoadWritableConfig(active Active) (Config, error) {
+	target := active.WritableConfigPath()
+	if target == "" {
+		return Config{}, ErrConfigNotFound
+	}
+
+	cfg, err := loadFile(target)
+	if err != nil {
+		return Config{}, err
+	}
+
+	return merge(Default(), cfg), nil
+}
+
 func (a Active) BaseRoots() []block.Root {
 	var roots []block.Root
 	if a.GlobalRoot != "" {
@@ -244,14 +258,33 @@ func SavePreset(active Active, name string, preset Preset) error {
 	}
 	cfg.Presets[name] = preset
 
-	data, err := yaml.Marshal(cfg)
+	return writeFileConfig(target, cfg)
+}
+
+func DeletePreset(active Active, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("preset name is required")
+	}
+
+	target := active.WritableConfigPath()
+	if target == "" {
+		return ErrConfigNotFound
+	}
+
+	cfg, err := loadFile(target)
 	if err != nil {
-		return fmt.Errorf("marshal config %s: %w", target, err)
+		return err
 	}
-	if err := os.WriteFile(target, data, 0o644); err != nil {
-		return fmt.Errorf("write config %s: %w", target, err)
+	if len(cfg.Presets) == 0 {
+		return fmt.Errorf("preset %q not found", name)
 	}
-	return nil
+	if _, ok := cfg.Presets[name]; !ok {
+		return fmt.Errorf("preset %q not found", name)
+	}
+	delete(cfg.Presets, name)
+
+	return writeFileConfig(target, cfg)
 }
 
 func merge(base Config, override fileConfig) Config {
@@ -280,4 +313,15 @@ func merge(base Config, override fileConfig) Config {
 		}
 	}
 	return result
+}
+
+func writeFileConfig(target string, cfg fileConfig) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config %s: %w", target, err)
+	}
+	if err := os.WriteFile(target, data, 0o644); err != nil {
+		return fmt.Errorf("write config %s: %w", target, err)
+	}
+	return nil
 }

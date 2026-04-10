@@ -30,6 +30,9 @@ type blockEntry struct {
 	Title       string
 	Description string
 	Tags        []string
+	Weight      int
+	Hidden      bool
+	Source      string
 }
 
 type model struct {
@@ -41,9 +44,10 @@ type model struct {
 	presetIndex     int
 	blocks          []blockEntry
 	blockCursor     int
-	selected        map[string]bool
+	selectedOrder   []string
 	filter          string
 	filterMode      bool
+	showHidden      bool
 	message         string
 	outputIndex     int
 	filePath        string
@@ -112,13 +116,15 @@ func newModel(active config.Active) (model, error) {
 	sort.Strings(presetNames)
 
 	entries := make([]blockEntry, 0, len(mergedBlocks))
-	for _, path := range block.SortedPaths(mergedBlocks) {
-		item := mergedBlocks[path]
+	for _, item := range block.SortedBlocks(mergedBlocks, true) {
 		entries = append(entries, blockEntry{
 			Path:        item.Path,
 			Title:       item.Title,
 			Description: item.Description,
 			Tags:        append([]string(nil), item.Tags...),
+			Weight:      item.Weight,
+			Hidden:      item.Hidden,
+			Source:      item.Source,
 		})
 	}
 
@@ -127,7 +133,6 @@ func newModel(active config.Active) (model, error) {
 		step:        stepPreset,
 		presetNames: append([]string{""}, presetNames...),
 		blocks:      entries,
-		selected:    map[string]bool{},
 		width:       120,
 		height:      32,
 	}
@@ -184,7 +189,7 @@ func (m model) View() string {
 	previewHeight := maxInt(12, m.height-8)
 
 	left := panelStyle.Width(leftWidth).Render(m.leftPanel())
-	right := panelStyle.Width(rightWidth).Height(previewHeight).Render(m.previewPanel(previewHeight))
+	right := panelStyle.Width(rightWidth).Height(previewHeight).Render(m.previewPanel(previewHeight, rightWidth-4))
 
 	header := titleStyle.Render("pmp ui") + "\n" + helpStyle.Render(m.stepTitle())
 	if m.statusMessage != "" {
@@ -253,15 +258,21 @@ func (m model) updateBlocks(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		if len(paths) > 0 {
 			path := paths[m.blockCursor].Path
-			if !m.isPresetBlock(path) {
-				m.selected[path] = !m.selected[path]
-				if !m.selected[path] {
-					delete(m.selected, path)
-				}
-			}
+			m.toggleExtra(path)
 		}
 	case "/":
 		m.filterMode = true
+	case "h":
+		m.showHidden = !m.showHidden
+		m.blockCursor = 0
+	case "[", "ctrl+k":
+		if len(paths) > 0 {
+			m.moveExtra(paths[m.blockCursor].Path, -1)
+		}
+	case "]", "ctrl+j":
+		if len(paths) > 0 {
+			m.moveExtra(paths[m.blockCursor].Path, 1)
+		}
 	case "ctrl+s":
 		m.openSaveMode()
 	case "backspace":
@@ -292,9 +303,11 @@ func (m model) updateMessage(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "ctrl+u":
 		m.message = ""
+	case "enter":
+		m.message += "\n"
 	case "ctrl+s":
 		m.openSaveMode()
-	case "enter", "tab", "right":
+	case "tab", "right":
 		m.step = stepOutput
 	case "esc", "left":
 		m.step = stepBlocks
@@ -384,17 +397,10 @@ func (m model) updateSave(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) rebuild() {
-	extraBlocks := make([]string, 0, len(m.selected))
-	for _, entry := range m.blocks {
-		if m.selected[entry.Path] {
-			extraBlocks = append(extraBlocks, entry.Path)
-		}
-	}
-
 	result, err := engine.Build(engine.BuildRequest{
 		PresetName:  m.selectedPreset(),
 		Message:     m.message,
-		ExtraBlocks: extraBlocks,
+		ExtraBlocks: append([]string(nil), m.selectedOrder...),
 	}, m.active)
 	m.result = result
 	m.buildErr = err
@@ -402,6 +408,9 @@ func (m *model) rebuild() {
 }
 
 func (m model) selectedPreset() string {
+	if len(m.presetNames) == 0 || m.presetIndex < 0 || m.presetIndex >= len(m.presetNames) {
+		return ""
+	}
 	return m.presetNames[m.presetIndex]
 }
 
@@ -422,8 +431,61 @@ func (m model) isPresetBlock(path string) bool {
 	return ok
 }
 
+func (m model) isSelectedExtra(path string) bool {
+	for _, selected := range m.selectedOrder {
+		if selected == path {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *model) toggleExtra(path string) {
+	if m.isPresetBlock(path) {
+		return
+	}
+	for idx, selected := range m.selectedOrder {
+		if selected == path {
+			m.selectedOrder = append(m.selectedOrder[:idx], m.selectedOrder[idx+1:]...)
+			return
+		}
+	}
+	m.selectedOrder = append(m.selectedOrder, path)
+}
+
+func (m *model) moveExtra(path string, delta int) {
+	if delta == 0 || m.isPresetBlock(path) {
+		return
+	}
+
+	index := -1
+	for idx, selected := range m.selectedOrder {
+		if selected == path {
+			index = idx
+			break
+		}
+	}
+	if index == -1 {
+		return
+	}
+
+	next := index + delta
+	if next < 0 || next >= len(m.selectedOrder) {
+		return
+	}
+	m.selectedOrder[index], m.selectedOrder[next] = m.selectedOrder[next], m.selectedOrder[index]
+}
+
+func (m model) alwaysVisibleBlocks() map[string]struct{} {
+	visible := m.presetBlockSet()
+	for _, path := range m.selectedOrder {
+		visible[path] = struct{}{}
+	}
+	return visible
+}
+
 func (m model) filteredBlocks() []blockEntry {
-	return filterBlocks(m.blocks, m.filter)
+	return filterBlocks(m.blocks, m.filter, m.showHidden, m.alwaysVisibleBlocks())
 }
 
 func (m *model) openSaveMode() {
@@ -451,14 +513,20 @@ func (m model) currentSaveDescription() string {
 	return "Saved from pmp ui"
 }
 
-func filterBlocks(entries []blockEntry, filter string) []blockEntry {
+func filterBlocks(entries []blockEntry, filter string, showHidden bool, alwaysVisible map[string]struct{}) []blockEntry {
 	filter = strings.TrimSpace(strings.ToLower(filter))
-	if filter == "" {
-		return entries
-	}
-
 	result := make([]blockEntry, 0, len(entries))
 	for _, entry := range entries {
+		if entry.Hidden && !showHidden {
+			if _, ok := alwaysVisible[entry.Path]; !ok {
+				continue
+			}
+		}
+		if filter == "" {
+			result = append(result, entry)
+			continue
+		}
+
 		var haystack strings.Builder
 		haystack.WriteString(strings.ToLower(entry.Path))
 		haystack.WriteString(" ")
@@ -516,15 +584,25 @@ func (m model) renderBlocks() string {
 	var lines []string
 	lines = append(lines, accentStyle.Render("Blocks"))
 	lines = append(lines, fmt.Sprintf("Filter: %s", displayInput(m.filter, m.filterMode)))
-	lines = append(lines, fmt.Sprintf("Selected extras: %d", len(m.selected)))
+	lines = append(lines, fmt.Sprintf("Selected extras: %d", len(m.selectedOrder)))
+	lines = append(lines, fmt.Sprintf("Hidden blocks: %s", onOff(m.showHidden)))
+	lines = append(lines, "")
+	lines = append(lines, "Extra block order:")
+	if len(m.selectedOrder) == 0 {
+		lines = append(lines, "  (none)")
+	} else {
+		for idx, path := range m.selectedOrder {
+			lines = append(lines, fmt.Sprintf("  %d. %s", idx+1, path))
+		}
+	}
 	lines = append(lines, "")
 	if len(paths) == 0 {
 		lines = append(lines, "No blocks match the current filter.")
 		return strings.Join(lines, "\n")
 	}
 
-	start := maxInt(0, m.blockCursor-8)
-	end := minInt(len(paths), start+18)
+	start := maxInt(0, m.blockCursor-6)
+	end := minInt(len(paths), start+12)
 	for idx := start; idx < end; idx++ {
 		entry := paths[idx]
 		cursor := "  "
@@ -535,11 +613,24 @@ func (m model) renderBlocks() string {
 		marker := "[ ]"
 		if _, ok := presetBlocks[entry.Path]; ok {
 			marker = "[p]"
-		} else if m.selected[entry.Path] {
+		} else if m.isSelectedExtra(entry.Path) {
 			marker = "[x]"
 		}
 
 		line := fmt.Sprintf("%s%s %s", cursor, marker, entry.Path)
+		var meta []string
+		if entry.Hidden {
+			meta = append(meta, "hidden")
+		}
+		if entry.Weight != 0 {
+			meta = append(meta, fmt.Sprintf("w=%d", entry.Weight))
+		}
+		if entry.Source != "" {
+			meta = append(meta, entry.Source)
+		}
+		if len(meta) > 0 {
+			line += " [" + strings.Join(meta, ", ") + "]"
+		}
 		lines = append(lines, line)
 		if entry.Description != "" {
 			lines = append(lines, "    "+entry.Description)
@@ -552,9 +643,9 @@ func (m model) renderMessage() string {
 	var lines []string
 	lines = append(lines, accentStyle.Render("Message"))
 	lines = append(lines, "")
-	lines = append(lines, displayInput(m.message, true))
+	lines = append(lines, displayMultilineInput(m.message, true)...)
 	lines = append(lines, "")
-	lines = append(lines, "Single-line task prompt. Enter continues to output selection.")
+	lines = append(lines, "Multi-line task prompt. Enter inserts a newline.")
 	return strings.Join(lines, "\n")
 }
 
@@ -598,11 +689,11 @@ func (m model) renderSavePreset() string {
 	lines = append(lines, descCursor+"Description:")
 	lines = append(lines, "  "+displayInput(m.saveDescription, m.saveField == 1))
 	lines = append(lines, "")
-	lines = append(lines, helpStyle.Render("enter moves/saves • tab switches fields • esc closes"))
+	lines = append(lines, helpStyle.Render("enter moves/saves | tab switches fields | esc closes"))
 	return strings.Join(lines, "\n")
 }
 
-func (m model) previewPanel(height int) string {
+func (m model) previewPanel(height, width int) string {
 	var lines []string
 	lines = append(lines, accentStyle.Render("Preview"))
 	lines = append(lines, fmt.Sprintf("Preset: %s", displayPreset(m.selectedPreset())))
@@ -616,19 +707,25 @@ func (m model) previewPanel(height int) string {
 	if len(m.result.Warnings) > 0 {
 		lines = append(lines, helpStyle.Render("Warnings: "+strings.Join(m.result.Warnings, "; ")))
 	}
-	lines = append(lines, helpStyle.Render(fmt.Sprintf("Preview offset: %d", m.previewOffset)))
+	previewLines := m.previewContentLines(width)
+	start := 0
+	end := 0
+	if len(previewLines) > 0 {
+		start = minInt(m.previewOffset, len(previewLines)-1) + 1
+		end = minInt(len(previewLines), minInt(m.previewOffset+maxInt(6, height-8), len(previewLines)))
+	}
+	lines = append(lines, helpStyle.Render(fmt.Sprintf("Preview lines: %d-%d/%d", start, end, len(previewLines))))
 	lines = append(lines, "")
-	lines = append(lines, m.renderPromptPreview(height-8)...)
+	lines = append(lines, m.renderPromptPreview(height-8, width)...)
 	return strings.Join(lines, "\n")
 }
 
-func (m model) renderPromptPreview(height int) []string {
-	prompt := strings.TrimSpace(m.result.Prompt)
-	if m.buildErr != nil || prompt == "" {
+func (m model) renderPromptPreview(height, width int) []string {
+	lines := m.previewContentLines(width)
+	if m.buildErr != nil || len(lines) == 0 {
 		return []string{"(empty prompt)"}
 	}
 
-	lines := strings.Split(prompt, "\n")
 	limit := maxInt(6, height)
 	start := minInt(m.previewOffset, maxInt(0, len(lines)-1))
 	if start > 0 {
@@ -645,7 +742,7 @@ func (m model) stepTitle() string {
 	case stepPreset:
 		return "Step 1/4: choose a preset"
 	case stepBlocks:
-		return "Step 2/4: add extra blocks and filter the library"
+		return "Step 2/4: add, order, and filter extra blocks"
 	case stepMessage:
 		return "Step 3/4: enter the task message"
 	case stepOutput:
@@ -658,16 +755,16 @@ func (m model) stepTitle() string {
 func (m model) helpText() string {
 	switch m.step {
 	case stepPreset:
-		return "up/down move • enter continues • q cancels"
+		return "up/down move | enter continues | q cancels"
 	case stepBlocks:
 		if m.filterMode {
-			return "type to filter • backspace deletes • enter or esc stops filtering • pgup/pgdown scroll preview"
+			return "type to filter | backspace deletes | enter or esc stops filtering | pgup/pgdown scroll preview"
 		}
-		return "up/down move • space toggles • / starts filter • ctrl+s saves preset • enter continues • esc goes back"
+		return "up/down move | space toggles | [ and ] reorder extras | h toggles hidden | / starts filter | ctrl+s saves preset | enter continues | esc goes back"
 	case stepMessage:
-		return "type message • backspace deletes • ctrl+u clears • ctrl+s saves preset • enter continues • esc goes back"
+		return "type message | enter adds a line | backspace deletes | ctrl+u clears | tab continues | ctrl+s saves preset | esc goes back"
 	case stepOutput:
-		return "up/down move • file mode accepts typing for path • ctrl+s saves preset • enter confirms • esc goes back"
+		return "up/down move | file mode accepts typing for path | ctrl+s saves preset | enter confirms | esc goes back"
 	default:
 		return ""
 	}
@@ -683,12 +780,26 @@ func displayPreset(name string) string {
 func displayInput(value string, focused bool) string {
 	cursor := ""
 	if focused {
-		cursor = "█"
+		cursor = "|"
 	}
 	if value == "" {
 		return cursor
 	}
 	return value + cursor
+}
+
+func displayMultilineInput(value string, focused bool) []string {
+	lines := strings.Split(value, "\n")
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+	if focused {
+		lines[len(lines)-1] += "|"
+	}
+	if len(lines) == 1 && lines[0] == "" {
+		return []string{"|"}
+	}
+	return lines
 }
 
 func deleteLastRune(value string) string {
@@ -731,6 +842,13 @@ func defaultFilePath() string {
 	return filepath.Clean("prompt.md")
 }
 
+func onOff(value bool) string {
+	if value {
+		return "shown"
+	}
+	return "hidden"
+}
+
 func outputOptions(outputIndex int, filePath string) output.Options {
 	switch outputIndex {
 	case 1:
@@ -771,7 +889,7 @@ func (m *model) saveCurrentPreset() (tea.Model, tea.Cmd) {
 	}
 	m.active.Config.Presets[name] = preset
 	m.refreshPresetNames(name)
-	m.selected = map[string]bool{}
+	m.selectedOrder = nil
 	m.saveMode = false
 	m.statusMessage = fmt.Sprintf("Saved preset %q", name)
 	m.rebuild()
@@ -822,15 +940,12 @@ func (m model) currentPresetBlocks() []string {
 			blocks = append(blocks, path)
 		}
 	}
-	for _, entry := range m.blocks {
-		if !m.selected[entry.Path] {
+	for _, path := range m.selectedOrder {
+		if _, ok := seen[path]; ok {
 			continue
 		}
-		if _, ok := seen[entry.Path]; ok {
-			continue
-		}
-		seen[entry.Path] = struct{}{}
-		blocks = append(blocks, entry.Path)
+		seen[path] = struct{}{}
+		blocks = append(blocks, path)
 	}
 	return blocks
 }
@@ -851,13 +966,12 @@ func (m *model) refreshPresetNames(selectName string) {
 }
 
 func (m *model) clampPreviewOffset() {
-	prompt := strings.TrimSpace(m.result.Prompt)
-	if prompt == "" {
+	lines := m.previewContentLines(maxInt(20, m.width-(maxInt(42, m.width/3))-8))
+	if len(lines) == 0 {
 		m.previewOffset = 0
 		return
 	}
 
-	lines := strings.Split(prompt, "\n")
 	maxOffset := maxInt(0, len(lines)-1)
 	if m.previewOffset < 0 {
 		m.previewOffset = 0
@@ -865,4 +979,41 @@ func (m *model) clampPreviewOffset() {
 	if m.previewOffset > maxOffset {
 		m.previewOffset = maxOffset
 	}
+}
+
+func (m model) previewContentLines(width int) []string {
+	prompt := strings.TrimSpace(m.result.Prompt)
+	if prompt == "" {
+		return nil
+	}
+
+	width = maxInt(20, width)
+
+	var lines []string
+	for _, raw := range strings.Split(prompt, "\n") {
+		lines = append(lines, wrapLine(raw, width)...)
+	}
+	return lines
+}
+
+func wrapLine(line string, width int) []string {
+	if width <= 0 {
+		return []string{line}
+	}
+	if line == "" {
+		return []string{""}
+	}
+
+	runes := []rune(line)
+	if len(runes) <= width {
+		return []string{line}
+	}
+
+	wrapped := make([]string, 0, len(runes)/width+1)
+	for len(runes) > width {
+		wrapped = append(wrapped, string(runes[:width]))
+		runes = runes[width:]
+	}
+	wrapped = append(wrapped, string(runes))
+	return wrapped
 }

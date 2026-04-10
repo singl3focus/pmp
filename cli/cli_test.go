@@ -118,7 +118,7 @@ func TestExecuteCompletionCommandRemainsReachable(t *testing.T) {
 func TestNormalizeArgsPreservesCobraCompletionCommands(t *testing.T) {
 	t.Parallel()
 
-	tests := []string{"completion", "__complete", "__completeNoDesc"}
+	tests := []string{"completion", "__complete", "__completeNoDesc", "preset"}
 	for _, firstArg := range tests {
 		firstArg := firstArg
 		t.Run(firstArg, func(t *testing.T) {
@@ -129,6 +129,200 @@ func TestNormalizeArgsPreservesCobraCompletionCommands(t *testing.T) {
 				t.Fatalf("expected %q to stay unchanged, got %q", firstArg, args[0])
 			}
 		})
+	}
+}
+
+func TestExecuteListHidesHiddenBlocksUnlessFlagIsSet(t *testing.T) {
+	tmp := t.TempDir()
+	previousWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir temp dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(previousWD)
+	})
+
+	writeProjectConfig(t, tmp, "presets:\n  feature:\n    blocks:\n      - tasks/feature.md\n")
+	hiddenPath := filepath.Join(tmp, ".pmp", "blocks", "tasks", "hidden.md")
+	hidden := "---\ntitle: Hidden\ndescription: Hidden helper\nhidden: true\n---\nInternal helper\n"
+	if err := os.WriteFile(hiddenPath, []byte(hidden), 0o644); err != nil {
+		t.Fatalf("write hidden block: %v", err)
+	}
+
+	stdout, err := captureStdout(t, func() error {
+		return Execute([]string{"list"}, VersionInfo{})
+	})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if strings.Contains(stdout, "tasks/hidden.md") {
+		t.Fatalf("expected hidden block to be omitted by default, got %q", stdout)
+	}
+	if !strings.Contains(stdout, "Hidden blocks: 1 not shown") {
+		t.Fatalf("expected hidden summary, got %q", stdout)
+	}
+
+	stdout, err = captureStdout(t, func() error {
+		return Execute([]string{"list", "--show-hidden"}, VersionInfo{})
+	})
+	if err != nil {
+		t.Fatalf("list show-hidden: %v", err)
+	}
+	if !strings.Contains(stdout, "tasks/hidden.md") || !strings.Contains(stdout, "hidden") {
+		t.Fatalf("expected hidden block metadata, got %q", stdout)
+	}
+}
+
+func TestExecutePresetAddShowListAndDelete(t *testing.T) {
+	tmp := t.TempDir()
+	previousWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir temp dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(previousWD)
+	})
+
+	writeProjectConfig(t, tmp, "presets:\n  feature:\n    blocks:\n      - tasks/feature.md\n")
+	if err := os.MkdirAll(filepath.Join(tmp, ".pmp", "blocks", "tools"), 0o755); err != nil {
+		t.Fatalf("mkdir tools: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, ".pmp", "blocks", "tools", "dev-tools.md"), []byte("Use dev tools"), 0o644); err != nil {
+		t.Fatalf("write dev tools block: %v", err)
+	}
+
+	stdout, err := captureStdout(t, func() error {
+		return Execute([]string{"preset", "add", "review", "--description", "Review flow", "--block", "tasks/feature.md", "--block", "tools/dev-tools.md"}, VersionInfo{})
+	})
+	if err != nil {
+		t.Fatalf("preset add: %v", err)
+	}
+	if !strings.Contains(stdout, `Saved preset "review" with 2 blocks`) {
+		t.Fatalf("unexpected add output %q", stdout)
+	}
+
+	stdout, err = captureStdout(t, func() error {
+		return Execute([]string{"preset", "show", "review"}, VersionInfo{})
+	})
+	if err != nil {
+		t.Fatalf("preset show: %v", err)
+	}
+	if !strings.Contains(stdout, "Name: review") || !strings.Contains(stdout, "tools/dev-tools.md") {
+		t.Fatalf("unexpected show output %q", stdout)
+	}
+
+	stdout, err = captureStdout(t, func() error {
+		return Execute([]string{"preset", "list"}, VersionInfo{})
+	})
+	if err != nil {
+		t.Fatalf("preset list: %v", err)
+	}
+	if !strings.Contains(stdout, "review: Review flow") {
+		t.Fatalf("unexpected preset list output %q", stdout)
+	}
+
+	stdout, err = captureStdout(t, func() error {
+		return Execute([]string{"preset", "delete", "review"}, VersionInfo{})
+	})
+	if err != nil {
+		t.Fatalf("preset delete: %v", err)
+	}
+	if !strings.Contains(stdout, `Deleted preset "review"`) {
+		t.Fatalf("unexpected delete output %q", stdout)
+	}
+
+	stdout, err = captureStdout(t, func() error {
+		return Execute([]string{"preset", "list"}, VersionInfo{})
+	})
+	if err != nil {
+		t.Fatalf("preset list after delete: %v", err)
+	}
+	if strings.Contains(stdout, "review") {
+		t.Fatalf("expected deleted preset to disappear, got %q", stdout)
+	}
+}
+
+func TestExecutePresetCommandsUseWritableConfigOnly(t *testing.T) {
+	tmp := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	previousWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir temp dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(previousWD)
+	})
+
+	writeGlobalConfig(t, home, "presets:\n  review:\n    description: Global review\n    blocks:\n      - tasks/global-review.md\n")
+	writeProjectConfig(t, tmp, "presets:\n  feature:\n    description: Local feature\n    blocks:\n      - tasks/feature.md\n")
+
+	stdout, err := captureStdout(t, func() error {
+		return Execute([]string{"preset", "list"}, VersionInfo{})
+	})
+	if err != nil {
+		t.Fatalf("preset list: %v", err)
+	}
+	if !strings.Contains(stdout, "feature: Local feature") {
+		t.Fatalf("expected local preset in output, got %q", stdout)
+	}
+	if strings.Contains(stdout, "Global review") || strings.Contains(stdout, "review") {
+		t.Fatalf("expected global-only preset to be hidden, got %q", stdout)
+	}
+
+	_, err = captureStdout(t, func() error {
+		return Execute([]string{"preset", "show", "review"}, VersionInfo{})
+	})
+	if err == nil {
+		t.Fatal("expected preset show to reject global-only preset")
+	}
+	if !strings.Contains(err.Error(), `preset "review" not found`) {
+		t.Fatalf("unexpected preset show error: %v", err)
+	}
+}
+
+func TestExecutePresetAddRejectsUnknownBlocks(t *testing.T) {
+	tmp := t.TempDir()
+	previousWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir temp dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(previousWD)
+	})
+
+	writeProjectConfig(t, tmp, "presets:\n  feature:\n    blocks:\n      - tasks/feature.md\n")
+
+	_, err = captureStdout(t, func() error {
+		return Execute([]string{"preset", "add", "review", "--block", "tasks/missing.md"}, VersionInfo{})
+	})
+	if err == nil {
+		t.Fatal("expected preset add to fail for unknown block")
+	}
+	if !strings.Contains(err.Error(), `resolve block "tasks/missing.md"`) {
+		t.Fatalf("unexpected preset add error: %v", err)
+	}
+
+	configData, readErr := os.ReadFile(filepath.Join(tmp, ".pmp", "config.yaml"))
+	if readErr != nil {
+		t.Fatalf("read config: %v", readErr)
+	}
+	if strings.Contains(string(configData), "review:") {
+		t.Fatalf("expected invalid preset not to be written, got %q", string(configData))
 	}
 }
 
@@ -316,6 +510,21 @@ func writeProjectConfig(t *testing.T, root, configData string) {
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "blocks", "tasks", "feature.md"), []byte("Implement feature"), 0o644); err != nil {
 		t.Fatalf("write feature block: %v", err)
+	}
+}
+
+func writeGlobalConfig(t *testing.T, home, configData string) {
+	t.Helper()
+
+	globalRoot := filepath.Join(home, ".pmp")
+	if err := os.MkdirAll(filepath.Join(globalRoot, "blocks", "tasks"), 0o755); err != nil {
+		t.Fatalf("mkdir global tasks: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(globalRoot, "config.yaml"), []byte(configData), 0o644); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(globalRoot, "blocks", "tasks", "global-review.md"), []byte("Global review"), 0o644); err != nil {
+		t.Fatalf("write global review block: %v", err)
 	}
 }
 

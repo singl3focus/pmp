@@ -182,6 +182,42 @@ func TestLoadActiveFindsProjectConfigInParentDirectory(t *testing.T) {
 	}
 }
 
+func TestDeletePresetRemovesPresetFromActiveConfig(t *testing.T) {
+	root := t.TempDir()
+	setHomeDir(t, t.TempDir())
+
+	projectRoot := filepath.Join(root, ".pmp")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("mkdir project: %v", err)
+	}
+
+	configPath := filepath.Join(projectRoot, "config.yaml")
+	raw := "version: 1\npresets:\n  feature:\n    description: feature\n    blocks:\n      - tasks/feature.md\n  review:\n    description: review\n    blocks:\n      - tasks/review.md\n"
+	if err := os.WriteFile(configPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	active, err := LoadActive(root)
+	if err != nil {
+		t.Fatalf("load active: %v", err)
+	}
+
+	if err := DeletePreset(active, "review"); err != nil {
+		t.Fatalf("delete preset: %v", err)
+	}
+
+	reloaded, err := loadFile(configPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if _, ok := reloaded.Presets["review"]; ok {
+		t.Fatalf("expected preset to be deleted")
+	}
+	if _, ok := reloaded.Presets["feature"]; !ok {
+		t.Fatalf("expected other preset to remain")
+	}
+}
+
 func TestLoadActiveUsesProjectConfigWhenGlobalHomeLookupFails(t *testing.T) {
 	root := t.TempDir()
 	projectRoot := filepath.Join(root, ".pmp")

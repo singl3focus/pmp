@@ -34,11 +34,35 @@ func TestFilterBlocksMatchesPathDescriptionAndTags(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := filterBlocks(entries, tt.filter)
+			got := filterBlocks(entries, tt.filter, true, nil)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("unexpected filter result: got %#v want %#v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFilterBlocksHidesHiddenEntriesUnlessRequested(t *testing.T) {
+	t.Parallel()
+
+	entries := []blockEntry{
+		{Path: "tasks/visible.md"},
+		{Path: "tasks/hidden.md", Hidden: true},
+	}
+
+	got := filterBlocks(entries, "", false, nil)
+	if len(got) != 1 || got[0].Path != "tasks/visible.md" {
+		t.Fatalf("unexpected visible filter result: %#v", got)
+	}
+
+	got = filterBlocks(entries, "", true, nil)
+	if len(got) != 2 {
+		t.Fatalf("expected hidden entries to be shown, got %#v", got)
+	}
+
+	got = filterBlocks(entries, "", false, map[string]struct{}{"tasks/hidden.md": {}})
+	if len(got) != 2 {
+		t.Fatalf("expected always-visible hidden entry to remain visible, got %#v", got)
 	}
 }
 
@@ -81,6 +105,39 @@ func TestUpdateOutputDoesNotFinishWhenBuildHasError(t *testing.T) {
 	}
 	if next.statusMessage == "" {
 		t.Fatal("expected status message explaining why output cannot be confirmed")
+	}
+}
+
+func TestUpdateMessageEnterAddsNewLineAndTabContinues(t *testing.T) {
+	t.Parallel()
+
+	m := model{step: stepMessage, message: "Line 1"}
+	updated, _ := m.updateMessage(tea.KeyMsg{Type: tea.KeyEnter})
+	next := updated.(model)
+
+	if next.message != "Line 1\n" {
+		t.Fatalf("expected newline to be inserted, got %q", next.message)
+	}
+	if next.step != stepMessage {
+		t.Fatalf("expected to stay on message step, got %v", next.step)
+	}
+
+	updated, _ = next.updateMessage(tea.KeyMsg{Type: tea.KeyTab})
+	next = updated.(model)
+	if next.step != stepOutput {
+		t.Fatalf("expected tab to continue to output, got %v", next.step)
+	}
+}
+
+func TestMoveExtraReordersSelectedBlocks(t *testing.T) {
+	t.Parallel()
+
+	m := model{selectedOrder: []string{"a.md", "b.md", "c.md"}}
+	m.moveExtra("b.md", 1)
+
+	want := []string{"a.md", "c.md", "b.md"}
+	if !reflect.DeepEqual(m.selectedOrder, want) {
+		t.Fatalf("unexpected order: got %#v want %#v", m.selectedOrder, want)
 	}
 }
 
@@ -196,6 +253,28 @@ func TestSaveCurrentPresetPreservesDefaultVars(t *testing.T) {
 	}
 	if got := next.active.Config.Presets["feature"].DefaultVars["audience"]; got != "team" {
 		t.Fatalf("expected in-memory preset vars to be preserved, got %q", got)
+	}
+}
+
+func TestCurrentPresetBlocksPreservesSelectedExtraOrder(t *testing.T) {
+	t.Parallel()
+
+	m := model{
+		presetNames:   []string{"", "feature"},
+		presetIndex:   1,
+		selectedOrder: []string{"tools/dev-tools.md", "tasks/review.md"},
+		active: config.Active{
+			Config: config.Config{
+				Presets: map[string]config.Preset{
+					"feature": {Blocks: []string{"tasks/feature.md"}},
+				},
+			},
+		},
+	}
+
+	want := []string{"tasks/feature.md", "tools/dev-tools.md", "tasks/review.md"}
+	if got := m.currentPresetBlocks(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected preset blocks: got %#v want %#v", got, want)
 	}
 }
 

@@ -141,3 +141,43 @@ func TestLoadFileStripsUTF8BOMBeforeParsingFrontMatter(t *testing.T) {
 		t.Fatalf("unexpected content %q", item.Content)
 	}
 }
+
+func TestSortedBlocksUsesVisibilityWeightAndLabel(t *testing.T) {
+	t.Parallel()
+
+	blocks := map[string]Block{
+		"tasks/zeta.md":   {Path: "tasks/zeta.md", Title: "Zeta", Weight: 20},
+		"tasks/alpha.md":  {Path: "tasks/alpha.md", Title: "Alpha", Weight: 10},
+		"tools/hidden.md": {Path: "tools/hidden.md", Title: "Hidden", Weight: 1, Hidden: true},
+		"tasks/plain.md":  {Path: "tasks/plain.md", Weight: 10},
+	}
+
+	got := SortedBlocks(blocks, false)
+	if len(got) != 3 {
+		t.Fatalf("expected hidden blocks to be excluded, got %d entries", len(got))
+	}
+
+	wantPaths := []string{"tasks/alpha.md", "tasks/plain.md", "tasks/zeta.md"}
+	for idx, want := range wantPaths {
+		if got[idx].Path != want {
+			t.Fatalf("entry %d path = %q, want %q", idx, got[idx].Path, want)
+		}
+	}
+}
+
+func TestSortedBlocksCanIncludeHiddenEntries(t *testing.T) {
+	t.Parallel()
+
+	blocks := map[string]Block{
+		"tasks/visible.md": {Path: "tasks/visible.md", Title: "Visible", Weight: 10},
+		"tasks/hidden.md":  {Path: "tasks/hidden.md", Title: "Hidden", Weight: 0, Hidden: true},
+	}
+
+	got := SortedBlocks(blocks, true)
+	if len(got) != 2 {
+		t.Fatalf("expected hidden blocks to be included, got %d entries", len(got))
+	}
+	if got[0].Path != "tasks/visible.md" || got[1].Path != "tasks/hidden.md" {
+		t.Fatalf("unexpected order: %#v", got)
+	}
+}
